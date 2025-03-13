@@ -6,7 +6,6 @@ import com.amazonaws.services.lambda.runtime.events.APIGatewayProxyResponseEvent
 import com.amazonaws.services.lambda.runtime.events.APIGatewayV2HTTPEvent;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.w3c.dom.Attr;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.*;
@@ -44,12 +43,82 @@ public class lambda_transacciones implements RequestHandler<APIGatewayV2HTTPEven
                     return getAllTransacciones(context);
                 case "DELETE":
                     return deleteTransaccionbyId(request.getBody(), context);
+                case "PUT":
+                    return modifyTransaccionbyID(request.getBody(), context);
                 default:
                     return createResponse(400, "Método HTTP no soportado: " + httpMethod);
             }
         } catch (Exception e) {
             context.getLogger().log("ERROR en handleRequest: " + e.getMessage());
             return createResponse(500, "Error interno: " + e.getMessage());
+        }
+    }
+
+    private APIGatewayProxyResponseEvent modifyTransaccionbyID(String body, Context context) {
+        try {
+            context.getLogger().log("Cuerpo recibido en PUT: " + body);
+            if (body == null || body.trim().isEmpty()) {
+                return createResponse(400, "El cuerpo de la solicitud está vacío.");
+            }
+
+            // Convertimos el JSON a un Map
+            Map<String, Object> rawMap = objectMapper.readValue(body, new TypeReference<Map<String, Object>>() {
+            });
+
+            String id_transaccion = (String) rawMap.get("id_transaccion");
+            if (id_transaccion == null || id_transaccion.trim().isEmpty()) {
+                return createResponse(400, "Falta el campo 'id_transaccion'.");
+            }
+
+            // Construimos itemKey solo con la clave primaria
+            Map<String, AttributeValue> itemKey = new HashMap<>();
+            itemKey.put("id_transaccion", AttributeValue.builder().s(id_transaccion).build());
+
+            // Construimos la expresión de actualización
+            StringBuilder updateExpression = new StringBuilder("SET ");
+            Map<String, AttributeValue> expressionAttributeValues = new HashMap<>();
+            Map<String, String> expressionAttributeNames = new HashMap<>();
+
+            int count = 0;
+            for (Map.Entry<String, Object> entry : rawMap.entrySet()) {
+                String key = entry.getKey();
+                if (!key.equals("id_transaccion")) {  // Excluimos la clave primaria
+                    count++;
+                    String fieldKey = "#field" + count;
+                    String valueKey = ":val" + count;
+
+                    updateExpression.append(count > 1 ? ", " : "").append(fieldKey).append(" = ").append(valueKey);
+                    expressionAttributeNames.put(fieldKey, key);
+
+                    if (entry.getValue() instanceof String) {
+                        expressionAttributeValues.put(valueKey, AttributeValue.builder().s((String) entry.getValue()).build());
+                    } else if (entry.getValue() instanceof Number) {
+                        expressionAttributeValues.put(valueKey, AttributeValue.builder().n(entry.getValue().toString()).build());
+                    } else if (entry.getValue() instanceof Boolean) {
+                        expressionAttributeValues.put(valueKey, AttributeValue.builder().bool((Boolean) entry.getValue()).build());
+                    }
+                }
+            }
+
+            if (count == 0) {
+                return createResponse(400, "No hay campos válidos para actualizar.");
+            }
+
+            // Construimos la solicitud UpdateItemRequest
+            UpdateItemRequest request = UpdateItemRequest.builder()
+                    .tableName(tableName)
+                    .key(itemKey)
+                    .updateExpression(updateExpression.toString())
+                    .expressionAttributeNames(expressionAttributeNames)
+                    .expressionAttributeValues(expressionAttributeValues)
+                    .build();
+
+            dynamoDbClient.updateItem(request);
+            return createResponse(200, "Transaccion actualizado correctamente.");
+
+        } catch (Exception e) {
+            context.getLogger().log("ERROR en modifyTransaccionbyID: " + e.getMessage());
+            return createResponse(500, "Error al actualizar transaccion: " + e.getMessage());
         }
     }
 
@@ -90,33 +159,27 @@ public class lambda_transacciones implements RequestHandler<APIGatewayV2HTTPEven
             }
             Transaccion transaccion = objectMapper.readValue(body, Transaccion.class);
             if (transaccion.id_transaccion == null || transaccion.id_transaccion.trim().isEmpty()) {
-                return createResponse(400, "Falta el campo 'id_transaccion'.");
+                transaccion.setId_transaccion(UUID.randomUUID().toString());
             }
             if (transaccion.getId_transaccion() == null || transaccion.getId_transaccion().trim().isEmpty()) {
                 transaccion.setId_transaccion(UUID.randomUUID().toString());
             }
             Map<String, AttributeValue> item = new HashMap<>();
             item.put("id_transaccion", AttributeValue.builder().s(transaccion.getId_transaccion()).build());
-            if (transaccion.getId_producto() != null) {
-                item.put("id_producto", AttributeValue.builder().s(transaccion.getId_producto()).build());
+            if (transaccion.getColeccionOrigen() != null) {
+                item.put("coleccionOrigen", AttributeValue.builder().s(transaccion.getColeccionOrigen()).build());
             }
-            if (transaccion.getTipo_movimiento() != null) {
-                item.put("tipo_movimiento", AttributeValue.builder().s(transaccion.getTipo_movimiento()).build());
+            if (transaccion.getFecha() != null) {
+                item.put("coleccionDestino", AttributeValue.builder().s(transaccion.getColeccionDestino()).build());
+            }
+            if (transaccion.getProducto() != null) {
+                item.put("producto", AttributeValue.builder().s(transaccion.getProducto()).build());
+            }
+            if (transaccion.getColeccionOrigen() != null) {
+                item.put("cantidad", AttributeValue.builder().s(String.valueOf(transaccion.getCantidad())).build());
             }
             if (transaccion.getFecha() != null) {
                 item.put("fecha", AttributeValue.builder().s(transaccion.getFecha()).build());
-            }
-            if (transaccion.getCantidad() != null) {
-                item.put("cantidad", AttributeValue.builder().s(transaccion.getCantidad()).build());
-            }
-            if (transaccion.getUbicacion_anterior() != null) {
-                item.put("ubicacion_anterior", AttributeValue.builder().s(transaccion.getUbicacion_anterior()).build());
-            }
-            if (transaccion.getUbicacion_actual() != null) {
-                item.put("ubicacion_actual", AttributeValue.builder().s(transaccion.getUbicacion_actual()).build());
-            }
-            if (transaccion.getResponsable() != null) {
-                item.put("responsable", AttributeValue.builder().s(transaccion.getResponsable()).build());
             }
             dynamoDbClient.putItem(PutItemRequest.builder().tableName(tableName).item(item).build());
             context.getLogger().log("Transaccion creada con ID: " + transaccion.getId_transaccion());
@@ -162,13 +225,11 @@ public class lambda_transacciones implements RequestHandler<APIGatewayV2HTTPEven
 
     public static class Transaccion{
         private String id_transaccion;
-        private String id_producto;
-        private String tipo_movimiento;
+        private String coleccionOrigen;
+        private String coleccionDestino;
+        private String producto;
+        private int cantidad;
         private String fecha;
-        private String cantidad;
-        private String ubicacion_anterior;
-        private String ubicacion_actual;
-        private String responsable;
 
         public String getId_transaccion() {
             return id_transaccion;
@@ -178,20 +239,36 @@ public class lambda_transacciones implements RequestHandler<APIGatewayV2HTTPEven
             this.id_transaccion = id_transaccion;
         }
 
-        public String getId_producto() {
-            return id_producto;
+        public String getColeccionOrigen() {
+            return coleccionOrigen;
         }
 
-        public void setId_producto(String id_producto) {
-            this.id_producto = id_producto;
+        public void setColeccionOrigen(String coleccionOrigen) {
+            this.coleccionOrigen = coleccionOrigen;
         }
 
-        public String getTipo_movimiento() {
-            return tipo_movimiento;
+        public String getColeccionDestino() {
+            return coleccionDestino;
         }
 
-        public void setTipo_movimiento(String tipo_movimiento) {
-            this.tipo_movimiento = tipo_movimiento;
+        public void setColeccionDestino(String coleccionDestino) {
+            this.coleccionDestino = coleccionDestino;
+        }
+
+        public String getProducto() {
+            return producto;
+        }
+
+        public void setProducto(String producto) {
+            this.producto = producto;
+        }
+
+        public int getCantidad() {
+            return cantidad;
+        }
+
+        public void setCantidad(int cantidad) {
+            this.cantidad = cantidad;
         }
 
         public String getFecha() {
@@ -200,38 +277,6 @@ public class lambda_transacciones implements RequestHandler<APIGatewayV2HTTPEven
 
         public void setFecha(String fecha) {
             this.fecha = fecha;
-        }
-
-        public String getCantidad() {
-            return cantidad;
-        }
-
-        public void setCantidad(String cantidad) {
-            this.cantidad = cantidad;
-        }
-
-        public String getUbicacion_anterior() {
-            return ubicacion_anterior;
-        }
-
-        public void setUbicacion_anterior(String ubicacion_anterior) {
-            this.ubicacion_anterior = ubicacion_anterior;
-        }
-
-        public String getUbicacion_actual() {
-            return ubicacion_actual;
-        }
-
-        public void setUbicacion_actual(String ubicacion_actual) {
-            this.ubicacion_actual = ubicacion_actual;
-        }
-
-        public String getResponsable() {
-            return responsable;
-        }
-
-        public void setResponsable(String responsable) {
-            this.responsable = responsable;
         }
     }
 }
