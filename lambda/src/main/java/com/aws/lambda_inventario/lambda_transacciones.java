@@ -220,7 +220,15 @@ public class lambda_transacciones implements RequestHandler<APIGatewayV2HTTPEven
     }
 
     private APIGatewayProxyResponseEvent createResponse(int statusCode, String body) {
-        return new APIGatewayProxyResponseEvent().withStatusCode(statusCode).withBody(body);
+        Map<String, String> headers = new HashMap<>();
+        headers.put("Content-Type", "application/json");
+        headers.put("Access-Control-Allow-Origin", "*"); // Opcional, para CORS
+        headers.put("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+
+        return new APIGatewayProxyResponseEvent()
+                .withStatusCode(statusCode)
+                .withHeaders(headers)
+                .withBody(body);
     }
 
     public static class Transaccion{
