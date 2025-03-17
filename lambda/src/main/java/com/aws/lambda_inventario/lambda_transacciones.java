@@ -114,7 +114,11 @@ public class lambda_transacciones implements RequestHandler<APIGatewayV2HTTPEven
                     .build();
 
             dynamoDbClient.updateItem(request);
-            return createResponse(200, "Transaccion actualizado correctamente.");
+            // Creamos la respuesta añadiendo el mensaje como un parametro más
+            Map<String, Object> responseMap = new HashMap<>();
+            responseMap.put("id_transaccion", id_transaccion);
+            responseMap.put("mensaje", "Transaccion actualizada correctamente.");
+            return createResponse(200, objectMapper.writeValueAsString(responseMap));
 
         } catch (Exception e) {
             context.getLogger().log("ERROR en modifyTransaccionbyID: " + e.getMessage());
